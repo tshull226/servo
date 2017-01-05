@@ -46,7 +46,7 @@ use dom::element::Element;
 use dom::event::{Event, EventBubbles, EventCancelable};
 use dom::globalscope::GlobalScope;
 use dom::htmlanchorelement::HTMLAnchorElement;
-use dom::htmliframeelement::HTMLIFrameElement;
+use dom::htmliframeelement::{HTMLIFrameElement, NavigationType};
 use dom::node::{Node, NodeDamage, window_from_node};
 use dom::serviceworker::TrustedServiceWorkerAddress;
 use dom::serviceworkerregistration::ServiceWorkerRegistration;
@@ -1001,8 +1001,8 @@ impl ScriptThread {
                 self.handle_frame_load_event(parent_id, frame_id, child_id),
             ConstellationControlMsg::DispatchStorageEvent(pipeline_id, storage, url, key, old_value, new_value) =>
                 self.handle_storage_event(pipeline_id, storage, url, key, old_value, new_value),
-            ConstellationControlMsg::FramedContentChanged(parent_pipeline_id, frame_id) =>
-                self.handle_framed_content_changed(parent_pipeline_id, frame_id),
+            ConstellationControlMsg::FramedContentChanged(parent_pipeline_id, pipeline_id, frame_id) =>
+                self.handle_framed_content_changed(parent_pipeline_id, pipeline_id, frame_id),
             ConstellationControlMsg::ReportCSSError(pipeline_id, filename, line, column, msg) =>
                 self.handle_css_error_reporting(pipeline_id, filename, line, column, msg),
             ConstellationControlMsg::Reload(pipeline_id) =>
@@ -1393,10 +1393,12 @@ impl ScriptThread {
 
     fn handle_framed_content_changed(&self,
                                      parent_pipeline_id: PipelineId,
+                                     pipeline_id: PipelineId,
                                      frame_id: FrameId) {
         let doc = self.documents.borrow().find_document(parent_pipeline_id).unwrap();
         let frame_element = doc.find_iframe(frame_id);
         if let Some(ref frame_element) = frame_element {
+            frame_element.update_pipeline_id(pipeline_id);
             frame_element.upcast::<Node>().dirty(NodeDamage::OtherNodeDamage);
             let window = doc.window();
             window.reflow(ReflowGoal::ForDisplay,
@@ -2053,7 +2055,8 @@ impl ScriptThread {
             Some(frame_id) => {
                 let iframe = self.documents.borrow().find_iframe(parent_pipeline_id, frame_id);
                 if let Some(iframe) = iframe {
-                    iframe.navigate_or_reload_child_browsing_context(Some(load_data), replace);
+                    let nav_type = if replace { NavigationType::Replace } else { NavigationType::Normal };
+                    iframe.navigate_or_reload_child_browsing_context(Some(load_data), nav_type);
                 }
             }
             None => {
